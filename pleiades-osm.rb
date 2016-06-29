@@ -3,9 +3,10 @@
 ENV['OSMLIB_XML_PARSER']='Expat'
 require 'OSM/StreamParser'
 require 'OSM/Database'
+require 'csv'
 
 class PleiadesCallbacks < OSM::Callbacks
-  attr_accessor :check_nodes, :database, :reparse, :name_string
+  attr_accessor :check_nodes, :database, :reparse, :check_names
 
   def node(node)
     if reparse
@@ -13,7 +14,7 @@ class PleiadesCallbacks < OSM::Callbacks
         $stderr.puts node.inspect
         return true
       else
-        if node.tags['name'] =~ /#{@name_string}/i
+        if node.tags['name'] && @check_names.include?(node.tags['name'])
           $stderr.puts node.inspect
           return true
         end
@@ -23,7 +24,7 @@ class PleiadesCallbacks < OSM::Callbacks
   end
 
   def way(way)
-    if way.tags['name'] =~ /#{@name_string}/i
+    if way.tags['name'] && @check_names.include?(way.tags['name'])
       $stderr.puts way.inspect
       unless reparse
         @check_nodes = (@check_nodes + way.nodes.map{|n| n.to_i}).uniq
@@ -38,7 +39,7 @@ class PleiadesCallbacks < OSM::Callbacks
   end
 
   def relation(relation)
-    if relation.tags['name'] =~ /#{@name_string}/i
+    if relation.tags['name'] && @check_names.include?(relation.tags['name'])
       $stderr.puts relation.inspect
       return true
     end
@@ -46,24 +47,48 @@ class PleiadesCallbacks < OSM::Callbacks
     return false
   end
 
-  def initialize(db, name)
+  def initialize(db, names)
     @check_nodes = []
     @database = db
     @reparse = false
-    @name_string = name
+    @check_names = names
   end
 end
 
-osm_file = ARGV[0]
-name_string = ARGV[1]
+osm_file, pleiades_places_csv, pleiades_names_csv = ARGV
+
+places = {}
+place_names = {}
+
+$stderr.puts "Parsing Pleiades places..."
+CSV.foreach(pleiades_places_csv, :headers => true) do |row|
+  places[row["path"]] = row.to_hash
+end
+$stderr.puts places.keys.length
+
+$stderr.puts "Parsing Pleiades names..."
+CSV.foreach(pleiades_names_csv, :headers => true) do |row|
+	unless places[row["pid"]].nil?
+		places[row["pid"]]["names"] ||= []
+		places[row["pid"]]["names"] << row.to_hash
+	end
+
+	[row["title"], row["nameAttested"], row["nameTransliterated"]].each do |name|
+    unless name.nil?
+      place_names[name] ||= []
+      place_names[name] |= [row["pid"]]
+    end
+	end
+end
+$stderr.puts place_names.keys.length
 
 db = OSM::Database.new
-cb = PleiadesCallbacks.new(db, name_string)
+cb = PleiadesCallbacks.new(db, place_names.keys)
 parser = OSM::StreamParser.new(:filename => osm_file, :callbacks => cb)
-$stderr.puts "Parsing..."
+$stderr.puts "Parsing OSM..."
 parser.parse
 $stderr.puts cb.check_nodes.inspect
-$stderr.puts "Re-parsing..."
+$stderr.puts "Re-parsing OSM..."
 cb.reparse = true
 parser = OSM::StreamParser.new(:filename => osm_file, :callbacks => cb, :db => db)
 parser.parse
