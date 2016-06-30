@@ -39,15 +39,16 @@ class PleiadesCallbacks < OSM::Callbacks
         $stderr.puts node.inspect
         return true
       else
-        if node.tags['name'] && @pleiades_names.keys.include?(node.tags['name'])
-          $stderr.puts node.inspect
-          @pleiades_names[node.tags['name']].each do |place|
-            if(haversine_distance(node.lat.to_f, node.lon.to_f, @pleiades_places[place]["reprLat"].to_f, @pleiades_places[place]["reprLong"].to_f) < DISTANCE_THRESHOLD)
-              puts "#{place},#{node.inspect}"
-              return true
+        node.tags.keys.select{|t| t =~ /^name(:.+)?$/}.map{|t| node.tags[t]}.each do |osm_name|
+          if osm_name && @pleiades_names.keys.include?(osm_name)
+            $stderr.puts node.inspect
+            @pleiades_names[osm_name].each do |place|
+              if(haversine_distance(node.lat.to_f, node.lon.to_f, @pleiades_places[place]["reprLat"].to_f, @pleiades_places[place]["reprLong"].to_f) < DISTANCE_THRESHOLD)
+                puts "#{place},#{node.inspect}"
+                return true
+              end
             end
           end
-          return false
         end
       end
     end
@@ -55,35 +56,38 @@ class PleiadesCallbacks < OSM::Callbacks
   end
 
   def way(way)
-    if way.tags['name'] && @pleiades_names.keys.include?(way.tags['name'])
-      $stderr.puts way.inspect
-      if reparse
-        nodes = way.nodes.map{|n| @database.get_node(n.to_i)}.reject{|n| n.nil?}
-        way_centroid = centroid(nodes)
-        $stderr.puts way_centroid.inspect
-        @pleiades_names[way.tags['name']].each do |place|
-          if(haversine_distance(way_centroid.lat.to_f, way_centroid.lon.to_f, @pleiades_places[place]["reprLat"].to_f, @pleiades_places[place]["reprLong"].to_f) < DISTANCE_THRESHOLD)
-            puts "#{place},#{way.inspect}"
-            return true
+    way.tags.keys.select{|t| t =~ /^name(:.+)?$/}.map{|t| way.tags[t]}.each do |osm_name|
+      if osm_name && @pleiades_names.keys.include?(osm_name)
+        $stderr.puts way.inspect
+        if reparse
+          nodes = way.nodes.map{|n| @database.get_node(n.to_i)}.reject{|n| n.nil?}
+          way_centroid = centroid(nodes)
+          $stderr.puts way_centroid.inspect
+          @pleiades_names[osm_name].each do |place|
+            if(haversine_distance(way_centroid.lat.to_f, way_centroid.lon.to_f, @pleiades_places[place]["reprLat"].to_f, @pleiades_places[place]["reprLong"].to_f) < DISTANCE_THRESHOLD)
+              $stderr.puts "MATCH: #{place}\t#{way.id}\t#{osm_name}"
+              puts "#{place},#{way.inspect}"
+              return true
+            end
           end
+        else
+          @check_nodes = (@check_nodes + way.nodes.map{|n| n.to_i}).uniq
         end
-        return false
-      else
-        @check_nodes = (@check_nodes + way.nodes.map{|n| n.to_i}).uniq
+        # way.nodes.each do |node|
+        #   $stderr.puts @database.get_node(node.to_i)
+        # end
       end
-      # way.nodes.each do |node|
-      #   $stderr.puts @database.get_node(node.to_i)
-      # end
-      return true
     end
 
     return false
   end
 
   def relation(relation)
-    if relation.tags['name'] && @pleiades_names.keys.include?(relation.tags['name'])
-      $stderr.puts relation.inspect
-      return true
+    relation.tags.keys.select{|t| t =~ /^name(:.+)?$/}.map{|t| relation.tags[t]}.each do |osm_name|
+      if osm_name && @pleiades_names.keys.include?(osm_name)
+        $stderr.puts relation.inspect
+        return true
+      end
     end
 
     return false
