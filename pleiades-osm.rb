@@ -24,10 +24,28 @@ def haversine_distance(lat1, lon1, lat2, lon2)
 	d = km_conv * c
 end
 
+# See:
+#   https://en.wikipedia.org/wiki/Centroid#Centroid_of_polygon
+#   https://github.com/geokit/geokit/blob/master/lib/geokit/polygon.rb#L45-L68
 def centroid(nodes)
-  avg_lat = nodes.map{|n| n.lat.to_f}.inject{ |sum, el| sum + el }.to_f / nodes.size
-  avg_lon = nodes.map{|n| n.lon.to_f}.inject{ |sum, el| sum + el }.to_f / nodes.size
-  return OSM::Node.new(1, 'pleiades-osm', Time.new.xmlschema, avg_lon, avg_lat)
+  centroid_lat = 0.0
+  centroid_lon = 0.0
+  signed_area = 0.0
+  nodes[0...-1].each_index do |i|
+    x0 = nodes[i].lat.to_f
+    y0 = nodes[i].lon.to_f
+    x1 = nodes[i+1].lat.to_f
+    y1 = nodes[i+1].lon.to_f
+    a = (x0 * y1) - (x1 * y0)
+    signed_area += a
+    centroid_lat += (x0 + x1) * a
+    centroid_lon += (y0 + y1) * a
+  end
+  signed_area *= 0.5
+  centroid_lat /= (6.0 * signed_area)
+  centroid_lon /= (6.0 * signed_area)
+
+  return OSM::Node.new(1, 'pleiades-osm', Time.new.xmlschema, centroid_lon, centroid_lat)
 end
 
 class PleiadesCallbacks < OSM::Callbacks
@@ -61,7 +79,10 @@ class PleiadesCallbacks < OSM::Callbacks
         $stderr.puts way.inspect
         if reparse
           nodes = way.nodes.map{|n| @database.get_node(n.to_i)}.reject{|n| n.nil?}
-          way_centroid = centroid(nodes)
+          way_centroid = nodes.first
+          if nodes.first == nodes.last
+            way_centroid = centroid(nodes)
+          end
           $stderr.puts way_centroid.inspect
           @pleiades_names[osm_name].each do |place|
             if(haversine_distance(way_centroid.lat.to_f, way_centroid.lon.to_f, @pleiades_places[place]["reprLat"].to_f, @pleiades_places[place]["reprLong"].to_f) < DISTANCE_THRESHOLD)
