@@ -2,9 +2,8 @@ SHELL:=/bin/bash
 
 all: pleiades-osm.csv
 
-turkey-latest.osm:
-	wget 'http://download.geofabrik.de/europe/turkey-latest.osm.bz2'
-	bunzip2 turkey-latest.osm.bz2
+turkey-latest.osm.pbf:
+	wget 'http://download.geofabrik.de/europe/turkey-latest.osm.pbf'
 
 pleiades-places-latest.csv:
 	wget http://atlantides.org/downloads/pleiades/dumps/$@.gz
@@ -14,8 +13,8 @@ pleiades-names-latest.csv:
 	wget http://atlantides.org/downloads/pleiades/dumps/$@.gz
 	gunzip $@.gz
 
-pleiades-osm.csv: pleiades-osm.rb pleiades-places-latest.csv pleiades-names-latest.csv
-	bundle exec ./pleiades-osm.rb turkey-latest.osm pleiades-places-latest.csv pleiades-names-latest.csv > $@
+pleiades-osm.csv: pleiades-osm.rb pleiades-places-latest.csv pleiades-names-latest.csv turkey-latest.osm.pbf
+	bundle exec ./pleiades-osm.rb turkey-latest.osm.pbf pleiades-places-latest.csv pleiades-names-latest.csv > $@
 
 clean:
-	rm -vf pleiades-*-latest.csv *.osm
+	rm -vf pleiades-*-latest.csv *.osm *.osm.pbf

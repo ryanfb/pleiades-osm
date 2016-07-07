@@ -9,6 +9,7 @@ require 'OSM/Database'
 require 'OSM/objects'
 require 'time'
 require 'csv'
+require 'pbf_parser'
 
 DISTANCE_THRESHOLD = 8.0
 
@@ -32,10 +33,10 @@ def centroid(nodes)
   centroid_lon = 0.0
   signed_area = 0.0
   nodes[0...-1].each_index do |i|
-    x0 = nodes[i].lat.to_f
-    y0 = nodes[i].lon.to_f
-    x1 = nodes[i+1].lat.to_f
-    y1 = nodes[i+1].lon.to_f
+    x0 = nodes[i][:lat].to_f
+    y0 = nodes[i][:lon].to_f
+    x1 = nodes[i+1][:lat].to_f
+    y1 = nodes[i+1][:lon].to_f
     a = (x0 * y1) - (x1 * y0)
     signed_area += a
     centroid_lat += (x0 + x1) * a
@@ -45,7 +46,8 @@ def centroid(nodes)
   centroid_lat /= (6.0 * signed_area)
   centroid_lon /= (6.0 * signed_area)
 
-  return OSM::Node.new(1, 'pleiades-osm', Time.new.xmlschema, centroid_lon, centroid_lat)
+  # return OSM::Node.new(1, 'pleiades-osm', Time.new.xmlschema, centroid_lon, centroid_lat)
+  return {:lon => centroid_lon, :lat => centroid_lat}
 end
 
 class PleiadesCallbacks < OSM::Callbacks
@@ -53,16 +55,18 @@ class PleiadesCallbacks < OSM::Callbacks
 
   def node(node)
     if reparse
-      if @check_nodes.include?(node.id)
+      if @check_nodes.include?(node[:id])
         $stderr.puts node.inspect
+        @database[node[:id]] = node
         return true
       else
-        node.tags.keys.select{|t| t =~ /^name(:.+)?$/}.map{|t| node.tags[t]}.each do |osm_name|
+        node[:tags].keys.select{|t| t =~ /^name(:.+)?$/}.map{|t| node[:tags][t]}.each do |osm_name|
           if osm_name && @pleiades_names.keys.include?(osm_name)
             $stderr.puts node.inspect
             @pleiades_names[osm_name].each do |place|
-              if(haversine_distance(node.lat.to_f, node.lon.to_f, @pleiades_places[place]["reprLat"].to_f, @pleiades_places[place]["reprLong"].to_f) < DISTANCE_THRESHOLD)
-                puts "#{place},#{node.inspect}"
+              if(haversine_distance(node[:lat].to_f, node[:lon].to_f, @pleiades_places[place]["reprLat"].to_f, @pleiades_places[place]["reprLong"].to_f) < DISTANCE_THRESHOLD)
+                puts "http://pleiades.stoa.org#{place},http://www.openstreetmap.org/node/#{node[:id]},#{osm_name}"
+                # db[node[:id]] = node
                 return true
               end
             end
@@ -74,25 +78,30 @@ class PleiadesCallbacks < OSM::Callbacks
   end
 
   def way(way)
-    way.tags.keys.select{|t| t =~ /^name(:.+)?$/}.map{|t| way.tags[t]}.each do |osm_name|
+    way[:tags].keys.select{|t| t =~ /^name(:.+)?$/}.map{|t| way[:tags][t]}.each do |osm_name|
       if osm_name && @pleiades_names.keys.include?(osm_name)
         $stderr.puts way.inspect
         if reparse
-          nodes = way.nodes.map{|n| @database.get_node(n.to_i)}.reject{|n| n.nil?}
-          way_centroid = nodes.first
-          if nodes.first == nodes.last
-            way_centroid = centroid(nodes)
-          end
-          $stderr.puts way_centroid.inspect
-          @pleiades_names[osm_name].each do |place|
-            if(haversine_distance(way_centroid.lat.to_f, way_centroid.lon.to_f, @pleiades_places[place]["reprLat"].to_f, @pleiades_places[place]["reprLong"].to_f) < DISTANCE_THRESHOLD)
-              $stderr.puts "MATCH: #{place}\t#{way.id}\t#{osm_name}"
-              puts "#{place},#{way.inspect}"
-              return true
+          nodes = way[:refs].map{|n| @database[n.to_i]}.compact
+          $stderr.puts nodes.inspect
+          if nodes.length > 0
+            way_centroid = nodes.first
+            if nodes.first[:id] == nodes.last[:id]
+              way_centroid = centroid(nodes)
             end
+            $stderr.puts way_centroid.inspect
+            @pleiades_names[osm_name].each do |place|
+              if(haversine_distance(way_centroid[:lat].to_f, way_centroid[:lon].to_f, @pleiades_places[place]["reprLat"].to_f, @pleiades_places[place]["reprLong"].to_f) < DISTANCE_THRESHOLD)
+                $stderr.puts "MATCH: #{place}\t#{way[:id]}\t#{osm_name}"
+                puts "http://pleiades.stoa.org#{place},http://www.openstreetmap.org/way/#{way[:id]},#{osm_name}"
+                return true
+              end
+            end
+          else
+            $stderr.puts "WARNING: no nodes in DB for #{way.inspect}"
           end
         else
-          @check_nodes = (@check_nodes + way.nodes.map{|n| n.to_i}).uniq
+          @check_nodes = (@check_nodes + way[:refs].map{|n| n.to_i}).uniq
         end
         # way.nodes.each do |node|
         #   $stderr.puts @database.get_node(node.to_i)
@@ -104,9 +113,11 @@ class PleiadesCallbacks < OSM::Callbacks
   end
 
   def relation(relation)
-    relation.tags.keys.select{|t| t =~ /^name(:.+)?$/}.map{|t| relation.tags[t]}.each do |osm_name|
+    relation[:tags].keys.select{|t| t =~ /^name(:.+)?$/}.map{|t| relation[:tags][t]}.each do |osm_name|
       if osm_name && @pleiades_names.keys.include?(osm_name)
-        $stderr.puts relation.inspect
+        @pleiades_names[osm_name].each do |place|
+          puts "http://pleiades.stoa.org#{place},http://www.openstreetmap.org/relation/#{relation[:id]},#{osm_name}"
+        end
         return true
       end
     end
@@ -123,7 +134,7 @@ class PleiadesCallbacks < OSM::Callbacks
   end
 end
 
-osm_file, pleiades_places_csv, pleiades_names_csv = ARGV
+pbf_file, pleiades_places_csv, pleiades_names_csv = ARGV
 
 places = {}
 place_names = {}
@@ -150,17 +161,19 @@ CSV.foreach(pleiades_names_csv, :headers => true) do |row|
 end
 $stderr.puts place_names.keys.length
 
-db = OSM::Database.new
+db = {}
 cb = PleiadesCallbacks.new(db, place_names, places)
-parser = OSM::StreamParser.new(:filename => osm_file, :callbacks => cb)
-$stderr.puts "Parsing OSM..."
-parser.parse
+pbf = PbfParser.new(pbf_file)
+$stderr.puts "Parsing PBF..."
+while pbf.next do
+  pbf.ways.each {|way| cb.way(way)}
+end
 $stderr.puts cb.check_nodes.inspect
-$stderr.puts "Re-parsing OSM..."
+$stderr.puts "Re-parsing PBF..."
 cb.reparse = true
-parser = OSM::StreamParser.new(:filename => osm_file, :callbacks => cb, :db => db)
-parser.parse
-$stderr.puts "#{db.nodes.keys.length} nodes"
-$stderr.puts "#{db.ways.keys.length} ways"
-$stderr.puts "#{db.relations.keys.length} relations"
-db.clear
+pbf = PbfParser.new(pbf_file)
+while pbf.next do
+  pbf.nodes.each {|node| cb.node(node)}
+  pbf.ways.each {|way| cb.way(way)}
+  pbf.relations.each {|relation| cb.relation(relation)}
+end

@@ -2,6 +2,7 @@ GEM
   remote: https://rubygems.org/
   specs:
     osmlib-base (0.1.4)
+    pbf_parser (0.2.0)
     xmlparser (0.7.2.1)
 
 PLATFORMS
@@ -9,6 +10,7 @@ PLATFORMS
 
 DEPENDENCIES
   osmlib-base
+  pbf_parser
   xmlparser
 
 BUNDLED WITH
