@@ -3,10 +3,6 @@
 Encoding.default_external = Encoding::UTF_8
 Encoding.default_internal = Encoding::UTF_8
 
-ENV['OSMLIB_XML_PARSER']='Expat'
-require 'OSM/StreamParser'
-require 'OSM/Database'
-require 'OSM/objects'
 require 'time'
 require 'csv'
 require 'pbf_parser'
@@ -46,11 +42,10 @@ def centroid(nodes)
   centroid_lat /= (6.0 * signed_area)
   centroid_lon /= (6.0 * signed_area)
 
-  # return OSM::Node.new(1, 'pleiades-osm', Time.new.xmlschema, centroid_lon, centroid_lat)
   return {:lon => centroid_lon, :lat => centroid_lat}
 end
 
-class PleiadesCallbacks < OSM::Callbacks
+class PleiadesCallbacks
   attr_accessor :check_nodes, :database, :reparse, :pleiades_names, :pleiades_places
 
   def node(node)
