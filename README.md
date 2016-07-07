@@ -1,4 +1,4 @@
-pleiades-tgn
+pleiades-osm
 ============
 
 This repository hosts code and data for automated machine alignments between the [Pleiades Gazetteer of Ancient Places](http://pleiades.stoa.org) and the [OpenStreetMap](https://www.openstreetmap.org/) (OSM).
